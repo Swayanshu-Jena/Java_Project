@@ -1,0 +1,450 @@
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Scanner;
+
+public class LibraryManagementSystem {
+    // Database configuration
+    private static final String DB_URL = "jdbc:mysql://localhost:3306/library_db";
+    private static final String DB_USER = "root";
+    private static final String DB_PASSWORD = "password";
+    
+    // Model classes
+    static class Book {
+        private int bookId;
+        private String title;
+        private String author;
+        private String isbn;
+        private int quantity;
+        private int available;
+        
+        public Book() {}
+        
+        public Book(String title, String author, String isbn, int quantity) {
+            this.title = title;
+            this.author = author;
+            this.isbn = isbn;
+            this.quantity = quantity;
+            this.available = quantity;
+        }
+        
+        // Getters and setters
+        public int getBookId() { return bookId; }
+        public void setBookId(int bookId) { this.bookId = bookId; }
+        public String getTitle() { return title; }
+        public void setTitle(String title) { this.title = title; }
+        public String getAuthor() { return author; }
+        public void setAuthor(String author) { this.author = author; }
+        public String getIsbn() { return isbn; }
+        public void setIsbn(String isbn) { this.isbn = isbn; }
+        public int getQuantity() { return quantity; }
+        public void setQuantity(int quantity) { this.quantity = quantity; }
+        public int getAvailable() { return available; }
+        public void setAvailable(int available) { this.available = available; }
+    }
+    
+    static class Member {
+        private int memberId;
+        private String name;
+        private String email;
+        private String phone;
+        private Date joinDate;
+        
+        // Constructors, getters, and setters
+        public Member() {}
+        
+        public Member(String name, String email, String phone) {
+            this.name = name;
+            this.email = email;
+            this.phone = phone;
+        }
+        
+        public int getMemberId() { return memberId; }
+        public void setMemberId(int memberId) { this.memberId = memberId; }
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public String getEmail() { return email; }
+        public void setEmail(String email) { this.email = email; }
+        public String getPhone() { return phone; }
+        public void setPhone(String phone) { this.phone = phone; }
+        public Date getJoinDate() { return joinDate; }
+        public void setJoinDate(Date joinDate) { this.joinDate = joinDate; }
+    }
+    
+    // Database Access Layer
+    static class DatabaseConnector {
+        public static Connection getConnection() throws SQLException {
+            return DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+        }
+        
+        public static void initializeDatabase() {
+            String[] createTables = {
+                "CREATE TABLE IF NOT EXISTS books (" +
+                "book_id INT PRIMARY KEY AUTO_INCREMENT, " +
+                "title VARCHAR(100) NOT NULL, " +
+                "author VARCHAR(100) NOT NULL, " +
+                "isbn VARCHAR(20) UNIQUE, " +
+                "quantity INT DEFAULT 1, " +
+                "available INT DEFAULT 1)",
+                
+                "CREATE TABLE IF NOT EXISTS members (" +
+                "member_id INT PRIMARY KEY AUTO_INCREMENT, " +
+                "name VARCHAR(100) NOT NULL, " +
+                "email VARCHAR(100) UNIQUE, " +
+                "phone VARCHAR(15), " +
+                "join_date DATE DEFAULT CURRENT_DATE)",
+                
+                "CREATE TABLE IF NOT EXISTS loans (" +
+                "loan_id INT PRIMARY KEY AUTO_INCREMENT, " +
+                "book_id INT, " +
+                "member_id INT, " +
+                "loan_date DATE DEFAULT CURRENT_DATE, " +
+                "due_date DATE, " +
+                "return_date DATE, " +
+                "fine DECIMAL(10,2) DEFAULT 0, " +
+                "FOREIGN KEY (book_id) REFERENCES books(book_id), " +
+                "FOREIGN KEY (member_id) REFERENCES members(member_id))"
+            };
+            
+            try (Connection conn = getConnection(); Statement stmt = conn.createStatement()) {
+                for (String sql : createTables) {
+                    stmt.executeUpdate(sql);
+                }
+                System.out.println("Database initialized successfully.");
+            } catch (SQLException e) {
+                System.err.println("Error initializing database: " + e.getMessage());
+            }
+        }
+    }
+    
+    static class BookDAO {
+        public void addBook(Book book) throws SQLException {
+            String sql = "INSERT INTO books (title, author, isbn, quantity, available) VALUES (?, ?, ?, ?, ?)";
+            
+            try (Connection conn = DatabaseConnector.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+                
+                stmt.setString(1, book.getTitle());
+                stmt.setString(2, book.getAuthor());
+                stmt.setString(3, book.getIsbn());
+                stmt.setInt(4, book.getQuantity());
+                stmt.setInt(5, book.getAvailable());
+                
+                stmt.executeUpdate();
+            }
+        }
+        
+        public List<Book> getAllBooks() throws SQLException {
+            List<Book> books = new ArrayList<>();
+            String sql = "SELECT * FROM books";
+            
+            try (Connection conn = DatabaseConnector.getConnection();
+                 Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(sql)) {
+                
+                while (rs.next()) {
+                    Book book = new Book();
+                    book.setBookId(rs.getInt("book_id"));
+                    book.setTitle(rs.getString("title"));
+                    book.setAuthor(rs.getString("author"));
+                    book.setIsbn(rs.getString("isbn"));
+                    book.setQuantity(rs.getInt("quantity"));
+                    book.setAvailable(rs.getInt("available"));
+                    
+                    books.add(book);
+                }
+            }
+            return books;
+        }
+        
+        public Book getBookById(int bookId) throws SQLException {
+            String sql = "SELECT * FROM books WHERE book_id = ?";
+            
+            try (Connection conn = DatabaseConnector.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+                
+                stmt.setInt(1, bookId);
+                try (ResultSet rs = stmt.executeQuery()) {
+                    if (rs.next()) {
+                        Book book = new Book();
+                        book.setBookId(rs.getInt("book_id"));
+                        book.setTitle(rs.getString("title"));
+                        book.setAuthor(rs.getString("author"));
+                        book.setIsbn(rs.getString("isbn"));
+                        book.setQuantity(rs.getInt("quantity"));
+                        book.setAvailable(rs.getInt("available"));
+                        return book;
+                    }
+                }
+            }
+            return null;
+        }
+    }
+    
+    static class MemberDAO {
+        public void addMember(Member member) throws SQLException {
+            String sql = "INSERT INTO members (name, email, phone) VALUES (?, ?, ?)";
+            
+            try (Connection conn = DatabaseConnector.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+                
+                stmt.setString(1, member.getName());
+                stmt.setString(2, member.getEmail());
+                stmt.setString(3, member.getPhone());
+                
+                stmt.executeUpdate();
+            }
+        }
+        
+        public List<Member> getAllMembers() throws SQLException {
+            List<Member> members = new ArrayList<>();
+            String sql = "SELECT * FROM members";
+            
+            try (Connection conn = DatabaseConnector.getConnection();
+                 Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(sql)) {
+                
+                while (rs.next()) {
+                    Member member = new Member();
+                    member.setMemberId(rs.getInt("member_id"));
+                    member.setName(rs.getString("name"));
+                    member.setEmail(rs.getString("email"));
+                    member.setPhone(rs.getString("phone"));
+                    member.setJoinDate(rs.getDate("join_date"));
+                    
+                    members.add(member);
+                }
+            }
+            return members;
+        }
+    }
+    
+    // User Interface
+    static class LibraryUI {
+        private Scanner scanner;
+        private BookDAO bookDAO;
+        private MemberDAO memberDAO;
+        
+        public LibraryUI() {
+            scanner = new Scanner(System.in);
+            bookDAO = new BookDAO();
+            memberDAO = new MemberDAO();
+        }
+        
+        public void start() {
+            DatabaseConnector.initializeDatabase();
+            
+            while (true) {
+                System.out.println("\n=== Library Management System ===");
+                System.out.println("1. Book Management");
+                System.out.println("2. Member Management");
+                System.out.println("3. Exit");
+                System.out.print("Enter your choice: ");
+                
+                int mainChoice = scanner.nextInt();
+                scanner.nextLine(); // consume newline
+                
+                switch (mainChoice) {
+                    case 1:
+                        bookManagement();
+                        break;
+                    case 2:
+                        memberManagement();
+                        break;
+                    case 3:
+                        System.out.println("Exiting system. Goodbye!");
+                        return;
+                    default:
+                        System.out.println("Invalid choice! Please try again.");
+                }
+            }
+        }
+        
+        private void bookManagement() {
+            while (true) {
+                System.out.println("\n=== Book Management ===");
+                System.out.println("1. Add New Book");
+                System.out.println("2. View All Books");
+                System.out.println("3. Search Book");
+                System.out.println("4. Back to Main Menu");
+                System.out.print("Enter your choice: ");
+                
+                int choice = scanner.nextInt();
+                scanner.nextLine(); // consume newline
+                
+                switch (choice) {
+                    case 1:
+                        addBook();
+                        break;
+                    case 2:
+                        viewAllBooks();
+                        break;
+                    case 3:
+                        searchBook();
+                        break;
+                    case 4:
+                        return;
+                    default:
+                        System.out.println("Invalid choice! Please try again.");
+                }
+            }
+        }
+        
+        private void addBook() {
+            System.out.println("\n--- Add New Book ---");
+            System.out.print("Enter title: ");
+            String title = scanner.nextLine();
+            
+            System.out.print("Enter author: ");
+            String author = scanner.nextLine();
+            
+            System.out.print("Enter ISBN: ");
+            String isbn = scanner.nextLine();
+            
+            System.out.print("Enter quantity: ");
+            int quantity = scanner.nextInt();
+            scanner.nextLine(); // consume newline
+            
+            Book book = new Book(title, author, isbn, quantity);
+            
+            try {
+                bookDAO.addBook(book);
+                System.out.println("Book added successfully!");
+            } catch (SQLException e) {
+                System.out.println("Error adding book: " + e.getMessage());
+            }
+        }
+        
+        private void viewAllBooks() {
+            try {
+                List<Book> books = bookDAO.getAllBooks();
+                
+                if (books.isEmpty()) {
+                    System.out.println("No books available in the library.");
+                    return;
+                }
+                
+                System.out.println("\n--- List of All Books ---");
+                System.out.printf("%-5s %-30s %-20s %-15s %-10s %-10s%n", 
+                    "ID", "Title", "Author", "ISBN", "Qty", "Avail");
+                
+                for (Book book : books) {
+                    System.out.printf("%-5d %-30s %-20s %-15s %-10d %-10d%n", 
+                        book.getBookId(), book.getTitle(), book.getAuthor(), 
+                        book.getIsbn(), book.getQuantity(), book.getAvailable());
+                }
+            } catch (SQLException e) {
+                System.out.println("Error retrieving books: " + e.getMessage());
+            }
+        }
+        
+        private void searchBook() {
+            System.out.print("\nEnter book title or author to search: ");
+            String searchTerm = scanner.nextLine();
+            
+            try {
+                List<Book> books = bookDAO.getAllBooks();
+                List<Book> results = new ArrayList<>();
+                
+                for (Book book : books) {
+                    if (book.getTitle().toLowerCase().contains(searchTerm.toLowerCase()) || 
+                        book.getAuthor().toLowerCase().contains(searchTerm.toLowerCase())) {
+                        results.add(book);
+                    }
+                }
+                
+                if (results.isEmpty()) {
+                    System.out.println("No books found matching your search.");
+                    return;
+                }
+                
+                System.out.println("\n--- Search Results ---");
+                System.out.printf("%-5s %-30s %-20s %-15s %-10s %-10s%n", 
+                    "ID", "Title", "Author", "ISBN", "Qty", "Avail");
+                
+                for (Book book : results) {
+                    System.out.printf("%-5d %-30s %-20s %-15s %-10d %-10d%n", 
+                        book.getBookId(), book.getTitle(), book.getAuthor(), 
+                        book.getIsbn(), book.getQuantity(), book.getAvailable());
+                }
+            } catch (SQLException e) {
+                System.out.println("Error searching books: " + e.getMessage());
+            }
+        }
+        
+        private void memberManagement() {
+            while (true) {
+                System.out.println("\n=== Member Management ===");
+                System.out.println("1. Add New Member");
+                System.out.println("2. View All Members");
+                System.out.println("3. Back to Main Menu");
+                System.out.print("Enter your choice: ");
+                
+                int choice = scanner.nextInt();
+                scanner.nextLine(); // consume newline
+                
+                switch (choice) {
+                    case 1:
+                        addMember();
+                        break;
+                    case 2:
+                        viewAllMembers();
+                        break;
+                    case 3:
+                        return;
+                    default:
+                        System.out.println("Invalid choice! Please try again.");
+                }
+            }
+        }
+        
+        private void addMember() {
+            System.out.println("\n--- Add New Member ---");
+            System.out.print("Enter name: ");
+            String name = scanner.nextLine();
+            
+            System.out.print("Enter email: ");
+            String email = scanner.nextLine();
+            
+            System.out.print("Enter phone: ");
+            String phone = scanner.nextLine();
+            
+            Member member = new Member(name, email, phone);
+            
+            try {
+                memberDAO.addMember(member);
+                System.out.println("Member added successfully!");
+            } catch (SQLException e) {
+                System.out.println("Error adding member: " + e.getMessage());
+            }
+        }
+        
+        private void viewAllMembers() {
+            try {
+                List<Member> members = memberDAO.getAllMembers();
+                
+                if (members.isEmpty()) {
+                    System.out.println("No members registered in the system.");
+                    return;
+                }
+                
+                System.out.println("\n--- List of All Members ---");
+                System.out.printf("%-5s %-20s %-25s %-15s %-10s%n", 
+                    "ID", "Name", "Email", "Phone", "Join Date");
+                
+                for (Member member : members) {
+                    System.out.printf("%-5d %-20s %-25s %-15s %-10s%n", 
+                        member.getMemberId(), member.getName(), member.getEmail(), 
+                        member.getPhone(), member.getJoinDate());
+                }
+            } catch (SQLException e) {
+                System.out.println("Error retrieving members: " + e.getMessage());
+            }
+        }
+    }
+    
+    public static void main(String[] args) {
+        LibraryUI ui = new LibraryUI();
+        ui.start();
+    }
+}
